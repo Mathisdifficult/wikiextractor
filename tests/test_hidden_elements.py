@@ -25,6 +25,20 @@ enwiki's Template:Short description, whose output carries
 apps and search through the {{SHORTDESC:}} magic word in the same
 template, which sets a page property; the div is a hidden copy.
 
+That second one is issue #421, "If a <div> tag has
+style="display:none" in it, perhaps that entire content should be
+vaporized". Note that the rule here is the style attribute, not the
+tag name -- div and span are the two that turn up in practice, but
+nothing about the pass is specific to either (see
+test_any_tag_name).
+
+A div looks like it should already have been covered, since 'div' is
+listed in discardElements. It never was: 'div' is in ignoredTags too,
+that list is processed first, and stripping the tags there leaves
+dropNested() nothing to pair up when the discardElements loop runs.
+So the discardElements entry is inert and a div's content has always
+survived, which is what #421 was looking at.
+
 Nesting is the part that needs care: a plain <span> inside a hidden
 one means the first </span> is not the matching close.
 
