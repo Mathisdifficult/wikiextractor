@@ -162,6 +162,94 @@ class NestingTests(unittest.TestCase):
             'a<span>after</span>b')
 
 
+class DivTests(unittest.TestCase):
+    """Issue #421, which asked for <div style="display:none"> and its
+    content to be vaporized.
+
+    div gets a class of its own rather than riding along in
+    test_any_tag_name because it is the one tag whose surrounding
+    machinery is unlike every other tag's: it is listed in both
+    ignoredTags and discardElements, ignoredTags is processed first,
+    and a div's tags are therefore already gone by the time the
+    discardElements loop looks for a pair to drop. Anyone reading
+    discardElements would expect divs to be discarded wholesale. They
+    never have been, which is what the issue was looking at, and the
+    tests below pin both halves of that: hidden divs go, visible divs
+    keep their content.
+    """
+
+    def test_a_hidden_div_goes_with_its_content(self):
+        self.assertEqual(
+            ex.dropHiddenElements('a<div style="display:none">gone</div>b'), 'ab')
+
+    def test_a_visible_div_is_untouched_by_the_pass(self):
+        source = 'a<div class="thumb">keep</div>b'
+        self.assertEqual(ex.dropHiddenElements(source), source)
+
+    def test_a_hidden_div_nested_in_a_visible_one(self):
+        self.assertEqual(
+            ex.dropHiddenElements(
+                '<div class="outer">before'
+                '<div style="display:none">gone</div>after</div>'),
+            '<div class="outer">beforeafter</div>')
+
+    def test_a_visible_div_nested_in_a_hidden_one_goes_too(self):
+        self.assertEqual(
+            ex.dropHiddenElements(
+                'a<div style="display:none">x<div class="v">y</div>z</div>b'),
+            'ab')
+
+    def test_a_div_spanning_several_lines(self):
+        self.assertEqual(
+            ex.dropHiddenElements('a<div style="display:none">\nline one\n'
+                                  'line two\n</div>b'),
+            'ab')
+
+    def test_the_rule_is_the_style_not_the_tag_name(self):
+        # center is in neither ignoredTags nor discardElements, so
+        # nothing but this pass could be removing it.
+        self.assertEqual(
+            ex.dropHiddenElements('a<center style="display:none">gone</center>b'),
+            'ab')
+
+
+class DivEndToEndTests(unittest.TestCase):
+    """The same through a real Extractor, where ignoredTags and
+    discardElements are in play."""
+
+    @staticmethod
+    def clean(wikitext):
+        extractor = ex.Extractor(1, "1", "https://x", "Test Article", [],
+                                 templates={}, templatePrefix='Template:')
+        return '\n'.join(extractor.clean_text(wikitext, expand_templates=True))
+
+    def test_a_hidden_div_does_not_reach_the_output(self):
+        self.assertEqual(self.clean('before <div style="display:none">'
+                                    'hidden</div> after'),
+                         'before after')
+
+    def test_a_visible_div_keeps_its_content(self):
+        # Not an accident of this pass -- it is ignoredTags reaching
+        # div first and stripping only the tags. If div were ever
+        # dropped from ignoredTags, the discardElements entry would
+        # wake up and start eating real prose; this is the test that
+        # would catch it.
+        self.assertEqual(self.clean('before <div class="thumb">kept text</div> after'),
+                         'before kept text after')
+
+    def test_only_the_hidden_one_of_two_divs_goes(self):
+        result = self.clean('<div style="display:none">hidden</div>'
+                            '<div>shown</div>')
+        self.assertIn('shown', result)
+        self.assertNotIn('hidden', result)
+
+    def test_no_div_tags_survive_either_way(self):
+        result = self.clean('a <div style="display:none">x</div> '
+                            '<div class="y">z</div> b')
+        self.assertNotIn('<div', result)
+        self.assertNotIn('</div>', result)
+
+
 class MalformedTests(unittest.TestCase):
     """A tag with no matching close loses only the tag, since the
     content after it belongs to someone else."""
